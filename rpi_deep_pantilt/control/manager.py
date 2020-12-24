@@ -54,6 +54,7 @@ def set_servos(pan, tilt):
             pth.pan(pan_angle)
         else:
             logging.info(f'pan_angle not in range {pan_angle}')
+    pth.servo_enable(1, False)
 
         if in_range(tilt_angle, SERVO_MIN, SERVO_MAX):
             pth.tilt(tilt_angle)
