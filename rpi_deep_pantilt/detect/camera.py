@@ -1,6 +1,7 @@
 # Python
 import logging
 import time
+import os
 import picamera
 from picamera.array import PiRGBArray
 from picamera import PiCamera
@@ -13,15 +14,19 @@ LOGLEVEL = logging.getLogger().getEffectiveLevel()
 
 RESOLUTION = (320, 320)
 
-TIMEOUT = 10
-FOX1 = 2
-
-logging.basicConfig()
+TIMEOUT = 10 
+FOX1 = .5 
 
 # https://github.com/dtreskunov/rpi-sensorium/commit/40c6f3646931bf0735c5fe4579fa89947e96aed7
 
+def log_temp():
+    cpu = "cat /sys/class/thermal/thermal_zone0/temp"
+    gpu = "/opt/vc/bin/vcgencmd measure_temp"
+    print("CPU => ", Int(os.system(cpu)) / 1000)
+    print("GPU => ", os.system(gpu))
 
-def run_pantilt_detect(pid_reset, detect_reset, center_x, center_y, labels, model_cls, rotation, resolution=RESOLUTION):
+
+def run_pantilt_detect(reset, run, fox1, center_x, center_y, labels, model_cls, rotation, resolution=RESOLUTION):
     '''
         Updates center_x and center_y coordinates with centroid of detected class's bounding box
         Overlay is only rendered around the tracked object
@@ -36,6 +41,8 @@ def run_pantilt_detect(pid_reset, detect_reset, center_x, center_y, labels, mode
     label_idxs = model.label_to_category_index(labels)
     start_time = time.time()
     track_time = time.time()
+    target_counter = 0
+    miss_counter = 0
     fps_counter = 0
     logging.info(
         f'Starting up tracking of {labels}')
@@ -44,12 +51,7 @@ def run_pantilt_detect(pid_reset, detect_reset, center_x, center_y, labels, mode
             frame = capture_manager.read()
             prediction = model.predict(frame)
 
-            if not len(prediction.get('detection_boxes')):
-                target_counter = 0
-                continue
-
             if any(item in label_idxs for item in prediction.get('detection_classes')):
-
                 tracked = (
                     (i, x) for i, x in
                     enumerate(prediction.get('detection_classes'))
@@ -74,32 +76,33 @@ def run_pantilt_detect(pid_reset, detect_reset, center_x, center_y, labels, mode
                     f'Tracking {display_name} center_x {x} center_y {y} : counter = {target_counter}')
 
                 if target_counter > FOX1:
+                   fox1.set()
                    logging.info(
                        f'FOX1 - Fire on {display_name} at center_x {x} center_y {y}')
 
             else:
                 target_counter = 0
+                miss_counter = miss_counter + (time.time() - track_time)
+                track_time = time.time()
 
             overlay = model.create_overlay(frame, prediction)
             capture_manager.overlay_buff = overlay
 
-            if detect_reset.value is True:
+            if reset.is_set():
                 center_x.value = RESOLUTION[0] // 2
-                center_y.value = RESOLUTION[1] // 2
-                detect_reset.value = False
-                logging.info(
-                    f'Resetting detection out of bounds ...')
+                center_y.value = RESOLUTION[1] // 2 
                 track_time = time.time()
                 target_counter = 0
+                miss_counter = 0
 
-            if (time.time() - track_time) > TIMEOUT:
-                center_x.value = RESOLUTION[0] // 2
-                center_y.value = RESOLUTION[1] // 2
-                pid_reset.value = True
+            if miss_counter > TIMEOUT:
+                reset.set() 
                 logging.info(
-                    f'Resetting detection at {TIMEOUT}s timeout ...')
+                    f'Resetting detection at {miss_counter}s timeout ...')
+                #log_temp()
                 track_time = time.time()
                 target_counter = 0
+                miss_counter = 0
 
             if LOGLEVEL is logging.DEBUG and (time.time() - start_time) > 1:
                 fps_counter += 1
@@ -131,7 +134,7 @@ def run_stationary_detect(labels, model_cls, rotation):
                 if not len(prediction.get('detection_boxes')):
                     continue
                 if any(item in label_idxs for item in prediction.get('detection_classes')):
-
+                    
                     # Not all models will need to implement a filter_tracked() interface
                     # For example, FaceSSD only allows you to track 1 class (faces) and does not implement this method
                     try:
@@ -173,8 +176,8 @@ class PiCameraStream(object):
       Continuously capture video frames, and optionally render with an overlay
 
       Arguments
-      resolution - tuple (x, y) size
-      framerate - int
+      resolution - tuple (x, y) size 
+      framerate - int 
       vflip - reflect capture on x-axis
       hflip - reflect capture on y-axis
 
