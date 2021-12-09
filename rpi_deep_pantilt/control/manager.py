@@ -25,7 +25,7 @@ PAN_SERVO_MIN = -90
 PAN_SERVO_MAX = 90
 
 TILT_SERVO_MIN = -45
-TILT_SERVO_MAX = 45 
+TILT_SERVO_MAX = 45
 
 CENTER = (
     RESOLUTION[0] // 2,
@@ -50,7 +50,7 @@ def signal_handler(sig, frame):
     # exit
     sys.exit()
 
-# Fox1 Fire Control 
+# Fox1 Fire Control
 def set_fox1(fox1):
     GPIO.output(FOX1, GPIO.LOW)
     while True:
@@ -58,7 +58,8 @@ def set_fox1(fox1):
        GPIO.output(FOX1, GPIO.HIGH)
        time.sleep(1)
        GPIO.output(FOX1, GPIO.LOW)
-       fox1.clear() 
+       time.sleep(1.5)
+       fox1.clear()
 
 def set_reset(reset, run):
     while True:
@@ -84,7 +85,7 @@ def set_servos(pan, tilt, reset, run):
         if reset.is_set():
            pth.pan(0)
            pth.tilt(0)
-           
+
         run.wait()
         pan_angle = -1 * pan.value
         tilt_angle = tilt.value
@@ -94,7 +95,7 @@ def set_servos(pan, tilt, reset, run):
             pth.pan(pan_angle)
         else:
             logging.info(f'pan_angle not in range {pan_angle}')
-            reset.set() 
+            reset.set()
 
         if in_range(tilt_angle, TILT_SERVO_MIN, TILT_SERVO_MAX):
             pth.tilt(tilt_angle)
@@ -119,7 +120,7 @@ def pid_process(output, p, i, d, box_coord, origin_coord, action, reset, run):
        error = origin_coord - box_coord.value
        output.value = p.update(error)
        # logging.info(f'{action} error {error} angle: {output.value}')
- 
+
 def pantilt_process_manager(
     model_cls,
     labels=('person',),
@@ -138,7 +139,7 @@ def pantilt_process_manager(
 
         # Reset signals
         reset = Event()
-        run = Event() 
+        run = Event()
 
         # Fire/Fox1 signal
         fox1 = Event()

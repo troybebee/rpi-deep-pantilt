@@ -1,6 +1,7 @@
 # Python
 import logging
 import time
+import os
 import picamera
 from picamera.array import PiRGBArray
 from picamera import PiCamera
@@ -13,12 +14,17 @@ LOGLEVEL = logging.getLogger().getEffectiveLevel()
 
 RESOLUTION = (320, 320)
 
-TIMEOUT = 30
+logging.basicConfig()
+TIMEOUT = 10
 FOX1 = .5
 
-logging.basicConfig()
-
 # https://github.com/dtreskunov/rpi-sensorium/commit/40c6f3646931bf0735c5fe4579fa89947e96aed7
+
+def log_temp():
+    cpu = "cat /sys/class/thermal/thermal_zone0/temp"
+    gpu = "/opt/vc/bin/vcgencmd measure_temp"
+    print("CPU => ", Int(os.system(cpu)) / 1000)
+    print("GPU => ", os.system(gpu))
 
 
 def run_pantilt_detect(reset, run, fox1, center_x, center_y, labels, model_cls, rotation, resolution=RESOLUTION):
@@ -39,7 +45,8 @@ def run_pantilt_detect(reset, run, fox1, center_x, center_y, labels, model_cls, 
     target_counter = 0
     miss_counter = 0
     fps_counter = 0
-    logging.info(f'Starting up tracking of {labels}')
+    logging.info(
+        f'Starting up tracking of {labels}')
     while not capture_manager.stopped:
         if capture_manager.frame is not None:
             frame = capture_manager.read()
@@ -73,7 +80,6 @@ def run_pantilt_detect(reset, run, fox1, center_x, center_y, labels, model_cls, 
                    fox1.set()
                    logging.info(
                    f'FOX1 - Fire on {display_name} at center_x {x} center_y {y} : counter = {target_counter}')
-
             else:
                 target_counter = 0
                 miss_counter = miss_counter + (time.time() - track_time)
@@ -93,6 +99,10 @@ def run_pantilt_detect(reset, run, fox1, center_x, center_y, labels, model_cls, 
                 reset.set()
                 logging.info(
                     f'Resetting detection at {miss_counter}s timeout ...')
+                reset.set()
+                logging.info(
+                    f'Resetting detection at {miss_counter}s timeout ...')
+                #log_temp()
                 track_time = time.time()
                 target_counter = 0
                 miss_counter = 0
