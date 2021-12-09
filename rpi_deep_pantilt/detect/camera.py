@@ -13,12 +13,15 @@ LOGLEVEL = logging.getLogger().getEffectiveLevel()
 
 RESOLUTION = (320, 320)
 
+TIMEOUT = 30
+FOX1 = .5
+
 logging.basicConfig()
 
 # https://github.com/dtreskunov/rpi-sensorium/commit/40c6f3646931bf0735c5fe4579fa89947e96aed7
 
 
-def run_pantilt_detect(center_x, center_y, labels, model_cls, rotation, resolution=RESOLUTION):
+def run_pantilt_detect(reset, run, fox1, center_x, center_y, labels, model_cls, rotation, resolution=RESOLUTION):
     '''
         Updates center_x and center_y coordinates with centroid of detected class's bounding box
         Overlay is only rendered around the tracked object
@@ -29,19 +32,20 @@ def run_pantilt_detect(center_x, center_y, labels, model_cls, rotation, resoluti
     capture_manager.start()
     capture_manager.start_overlay()
 
+
     label_idxs = model.label_to_category_index(labels)
     start_time = time.time()
+    track_time = time.time()
+    target_counter = 0
+    miss_counter = 0
     fps_counter = 0
+    logging.info(f'Starting up tracking of {labels}')
     while not capture_manager.stopped:
         if capture_manager.frame is not None:
             frame = capture_manager.read()
             prediction = model.predict(frame)
 
-            if not len(prediction.get('detection_boxes')):
-                continue
-
             if any(item in label_idxs for item in prediction.get('detection_classes')):
-
                 tracked = (
                     (i, x) for i, x in
                     enumerate(prediction.get('detection_classes'))
@@ -49,29 +53,56 @@ def run_pantilt_detect(center_x, center_y, labels, model_cls, rotation, resoluti
                 )
                 tracked_idxs, tracked_classes = zip(*tracked)
 
-                track_target = prediction.get('detection_boxes')[
-                    tracked_idxs[0]]
+                track_target = prediction.get('detection_boxes')[tracked_idxs[0]]
+
                 # [ymin, xmin, ymax, xmax]
-                y = int(
-                    RESOLUTION[1] - ((np.take(track_target, [0, 2])).mean() * RESOLUTION[1]))
+                y = int( RESOLUTION[1] - ((np.take(track_target, [0, 2])).mean() * RESOLUTION[1]))
                 center_y.value = y
-                x = int(
-                    RESOLUTION[0] - ((np.take(track_target, [1, 3])).mean() * RESOLUTION[0]))
+
+                x = int( RESOLUTION[0] - ((np.take(track_target, [1, 3])).mean() * RESOLUTION[0]))
                 center_x.value = x
 
                 display_name = model.category_index[tracked_classes[0]]['name']
+                target_counter = target_counter + (time.time() - track_time)
+                track_time = time.time()
+
                 logging.info(
-                    f'Tracking {display_name} center_x {x} center_y {y}')
+                    f'Tracking {display_name} center_x {x} center_y {y} : counter = {target_counter}')
+
+                if target_counter > FOX1:
+                   fox1.set()
+                   logging.info(
+                   f'FOX1 - Fire on {display_name} at center_x {x} center_y {y} : counter = {target_counter}')
+
+            else:
+                target_counter = 0
+                miss_counter = miss_counter + (time.time() - track_time)
+                track_time = time.time()
 
             overlay = model.create_overlay(frame, prediction)
             capture_manager.overlay_buff = overlay
+
+            if reset.is_set():
+                center_x.value = RESOLUTION[0] // 2
+                center_y.value = RESOLUTION[1] // 2
+                track_time = time.time()
+                target_counter = 0
+                miss_counter = 0
+
+            if miss_counter > TIMEOUT:
+                reset.set()
+                logging.info(
+                    f'Resetting detection at {miss_counter}s timeout ...')
+                track_time = time.time()
+                target_counter = 0
+                miss_counter = 0
+
             if LOGLEVEL is logging.DEBUG and (time.time() - start_time) > 1:
                 fps_counter += 1
                 fps = fps_counter / (time.time() - start_time)
                 logging.debug(f'FPS: {fps}')
                 fps_counter = 0
                 start_time = time.time()
-
 
 def run_stationary_detect(labels, model_cls, rotation):
     '''
@@ -96,7 +127,7 @@ def run_stationary_detect(labels, model_cls, rotation):
                 if not len(prediction.get('detection_boxes')):
                     continue
                 if any(item in label_idxs for item in prediction.get('detection_classes')):
-                    
+
                     # Not all models will need to implement a filter_tracked() interface
                     # For example, FaceSSD only allows you to track 1 class (faces) and does not implement this method
                     try:
@@ -138,8 +169,8 @@ class PiCameraStream(object):
       Continuously capture video frames, and optionally render with an overlay
 
       Arguments
-      resolution - tuple (x, y) size 
-      framerate - int 
+      resolution - tuple (x, y) size
+      framerate - int
       vflip - reflect capture on x-axis
       hflip - reflect capture on y-axis
 
